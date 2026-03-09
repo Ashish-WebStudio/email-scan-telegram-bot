@@ -1,0 +1,22 @@
+{
+  "name": "email-scan-telegram-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.3.1",
+    "mongoose": "^9.2.4",
+    "pako": "^2.1.0",
+    "telegraf": "^4.16.3"
+  }
+}

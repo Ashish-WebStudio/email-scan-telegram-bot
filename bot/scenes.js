@@ -1,28 +1,52 @@
 const { Scenes, Markup } = require("telegraf");
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
+const { handleTelegramDocument } = require("../services/scanner");
 
 // --- Login Wizard ---
 const loginWizard = new Scenes.WizardScene(
     "LOGIN_SCENE",
     async (ctx) => {
-        await ctx.reply("Please enter your registered Email address:", Markup.forceReply());
-        return ctx.wizard.next();
-    },
-    async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return;
-        ctx.wizard.state.email = ctx.message.text.trim().toLowerCase();
-
-        await ctx.reply("Please enter your password:", Markup.forceReply());
-        return ctx.wizard.next();
-    },
-    async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return;
-        const password = ctx.message.text;
-        const email = ctx.wizard.state.email;
-        const telegramId = ctx.from.id.toString();
-
         try {
+            await ctx.reply("Please enter your registered Email address:", Markup.forceReply());
+            return ctx.wizard.next();
+        } catch (error) {
+            console.error("Login scene start error:", error);
+            return ctx.scene.leave();
+        }
+    },
+    async (ctx) => {
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply("Please enter a valid email address:");
+                return;
+            }
+            const email = ctx.message.text.trim().toLowerCase();
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                await ctx.reply("❌ Invalid email format. Please try again:", Markup.forceReply());
+                return;
+            }
+            ctx.wizard.state.email = email;
+
+            await ctx.reply("Please enter your password:", Markup.forceReply());
+            return ctx.wizard.next();
+        } catch (error) {
+            console.error("Login email step error:", error);
+            await ctx.reply("An error occurred. Returning to menu.");
+            return ctx.scene.leave();
+        }
+    },
+    async (ctx) => {
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply("Please enter your password:");
+                return;
+            }
+            const password = ctx.message.text;
+            const email = ctx.wizard.state.email;
+            const telegramId = ctx.from.id.toString();
+
             // Delete the message containing the password for security
             try { await ctx.deleteMessage(); } catch (e) { }
 
@@ -41,6 +65,13 @@ const loginWizard = new Scenes.WizardScene(
             if (!isMatch) {
                 await ctx.reply("❌ Invalid password. Please try again with /start.");
                 return ctx.scene.leave();
+            }
+
+            // check if another user has this telegram id
+            const existingTelegramUser = await User.findOne({ telegramId, email: { $ne: email } });
+            if (existingTelegramUser) {
+                // unlink previous user and link to this one
+                await User.updateOne({ _id: existingTelegramUser._id }, { $unset: { telegramId: "" } });
             }
 
             user.telegramId = telegramId;
@@ -76,53 +107,76 @@ const loginWizard = new Scenes.WizardScene(
 const signupWizard = new Scenes.WizardScene(
     "SIGNUP_SCENE",
     async (ctx) => {
-        await ctx.reply("Let's create your account!\n\nPlease enter your Email address:", Markup.forceReply());
-        return ctx.wizard.next();
-    },
-    async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return;
-        const email = ctx.message.text.trim().toLowerCase();
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            await ctx.reply("❌ Please enter a valid email address:", Markup.forceReply());
-            return;
-        }
-
-        // Check if email exists
-        const exists = await User.findOne({ email });
-        if (exists) {
-            await ctx.reply("❌ An account with that email already exists. Please enter a different email (or /start to login):", Markup.forceReply());
-            return;
-        }
-
-        ctx.wizard.state.email = email;
-        await ctx.reply("Great! Now please enter a Password.\n\n_Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character._", { parse_mode: "Markdown", ...Markup.forceReply() });
-        return ctx.wizard.next();
-    },
-    async (ctx) => {
-        if (!ctx.message || !ctx.message.text) return;
-        const password = ctx.message.text;
-
-        const pwdRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).+$/;
-        if (password.length < 8 || !pwdRegex.test(password)) {
-            await ctx.reply("❌ Password is too weak. Please ensure it is 8+ chars and has uppercase, lowercase, number, and special character:", Markup.forceReply());
-            return;
-        }
-
-        // Delete the message containing the password for security
-        try { await ctx.deleteMessage(); } catch (e) { }
-
-        const { email } = ctx.wizard.state;
-        const telegramId = ctx.from.id.toString();
-
         try {
+            await ctx.reply("Let's create your account!\n\nPlease enter your Email address:", Markup.forceReply());
+            return ctx.wizard.next();
+        } catch (error) {
+            console.error("Signup scene start error:", error);
+            return ctx.scene.leave();
+        }
+    },
+    async (ctx) => {
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply("Please enter a valid email address:");
+                return;
+            }
+            const email = ctx.message.text.trim().toLowerCase();
+
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                await ctx.reply("❌ Please enter a valid email address:", Markup.forceReply());
+                return;
+            }
+
+            // Check if email exists
+            const exists = await User.findOne({ email });
+            if (exists) {
+                await ctx.reply("❌ An account with that email already exists. Please enter a different email (or /start to login):", Markup.forceReply());
+                return;
+            }
+
+            ctx.wizard.state.email = email;
+            await ctx.reply("Great! Now please enter a Password.\n\n_Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, one number, and one special character._", { parse_mode: "Markdown", ...Markup.forceReply() });
+            return ctx.wizard.next();
+        } catch (error) {
+            console.error("Signup email step error:", error);
+            await ctx.reply("An error occurred. Returning to menu.");
+            return ctx.scene.leave();
+        }
+    },
+    async (ctx) => {
+        try {
+            if (!ctx.message || !ctx.message.text) {
+                await ctx.reply("Please enter a valid password:");
+                return;
+            }
+            const password = ctx.message.text;
+
+            const pwdRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).+$/;
+            if (password.length < 8 || !pwdRegex.test(password)) {
+                await ctx.reply("❌ Password is too weak. Please ensure it is 8+ chars and has uppercase, lowercase, number, and special character:", Markup.forceReply());
+                return;
+            }
+
+            // Delete the message containing the password for security
+            try { await ctx.deleteMessage(); } catch (e) { }
+
+            const { email } = ctx.wizard.state;
+            const telegramId = ctx.from.id.toString();
+
             // Generate a random username (e.g. user_738291)
             const randomSuffix = Math.floor(100000 + Math.random() * 900000);
             const username = `user_${randomSuffix}`;
 
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash(password, salt);
+
+            // check if another user has this telegram id
+            const existingTelegramUser = await User.findOne({ telegramId });
+            if (existingTelegramUser) {
+                await User.updateOne({ _id: existingTelegramUser._id }, { $unset: { telegramId: "" } });
+            }
 
             const newUser = new User({
                 username,
@@ -191,31 +245,36 @@ const uploadWizard = new Scenes.WizardScene(
         }
     },
     async (ctx) => {
-        if (!ctx.message) return;
+        try {
+            if (!ctx.message) return;
 
-        // Allow users to exit the scene by clicking other menu buttons or typing /cancel
-        if (ctx.message.text) {
-            const text = ctx.message.text;
-            if (text === "/cancel" || text === "📤 Logout" || text === "👤 Profile" || text === "🌐 Visit Website") {
-                await ctx.reply("Returning to main menu...");
+            // Allow users to exit the scene by clicking other menu buttons or typing /cancel
+            if (ctx.message.text) {
+                const text = ctx.message.text;
+                if (text === "/cancel" || text === "📤 Logout" || text === "👤 Profile" || text === "🌐 Visit Website") {
+                    await ctx.reply("Returning to main menu...");
+                    return ctx.scene.leave();
+                }
+            }
+
+            if (ctx.message.document) {
+                const telegramId = ctx.from.id.toString();
+                const user = await User.findOne({ telegramId });
+
+                if (user) {
+                    await handleTelegramDocument(ctx, user);
+                } else {
+                    await ctx.reply("Session expired. Please start again.");
+                }
                 return ctx.scene.leave();
             }
-        }
 
-        if (ctx.message.document) {
-            const { handleTelegramDocument } = require("../services/scanner");
-            const telegramId = ctx.from.id.toString();
-            const user = await User.findOne({ telegramId });
-
-            if (user) {
-                await handleTelegramDocument(ctx, user);
-            } else {
-                await ctx.reply("Session expired. Please start again.");
-            }
+            await ctx.reply("❌ Invalid input. Please upload a `.txt` file or tap a menu button to cancel.");
+        } catch (error) {
+            console.error("Upload document step error:", error);
+            await ctx.reply("An error occurred. Returning to menu.");
             return ctx.scene.leave();
         }
-
-        await ctx.reply("❌ Invalid input. Please upload a `.txt` file or tap a menu button to cancel.");
     }
 );
 

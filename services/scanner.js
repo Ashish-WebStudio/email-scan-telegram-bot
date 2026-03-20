@@ -168,10 +168,19 @@ const handleTelegramDocument = async (ctx, user) => {
         await ctx.reply(`Reading file: ${document.file_name}... 📄`);
 
         const fileLink = await ctx.telegram.getFileLink(document.file_id);
-        const response = await axios.get(fileLink.href);
-        const fileContent = response.data;
+        const response = await axios.get(fileLink.href, {
+            timeout: 30000, // 30s max for download
+            responseType: 'arraybuffer' // Download as buffer to handle any encoding
+        });
+        
+        const fileContent = Buffer.from(response.data).toString('utf-8');
 
-        const rawLines = fileContent.toString().split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        // Basic validation for text files
+        if (fileContent.includes('\u0000')) {
+          return ctx.reply("❌ The uploaded file looks like binary data. Please upload a plain text (.txt) file.");
+        }
+
+        const rawLines = fileContent.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
         const emails = [...new Set(rawLines)];
 
         if (emails.length === 0) {

@@ -14,7 +14,7 @@ connectDB().catch(err => {
 
 // --- Express App for Dashboard ---
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.DASHBOARD_PORT || 4000;
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -43,7 +43,7 @@ app.get("/health", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`✅ Front-end monitoring dashboard is running on port ${PORT}`);
+    console.log(`🚀 Front-end monitoring dashboard is running on port ${PORT}`);
 });
 
 // --- Telegram Bot Setup ---
@@ -69,7 +69,7 @@ const stage = new Scenes.Stage([loginWizard, signupWizard, uploadWizard]);
 bot.use(session());
 bot.use(stage.middleware());
 
-const WEBSITE_URL = "https://emailscan.in";
+const WEBSITE_URL = process.env.FRONTEND_URL || "https://emailscan.in";
 
 const unlinkedKeyboard = Markup.keyboard([
     ["🔑 Login", "📝 Sign Up"],
@@ -80,19 +80,74 @@ const unlinkedKeyboard = Markup.keyboard([
 }).resize();
 
 const linkedKeyboard = Markup.keyboard([
-    ["👤 Profile", "🔍 Check Accounts"],
-    ["🌐 Visit Website", "📤 Logout"]
+    ["👤 Profile", "📧 Check Accounts"],
+    ["🌐 Visit Website", "🚪 Logout"]
 ], {
     input_field_placeholder: "Choose an action or send a file...",
     is_persistent: true
 }).resize();
 
-// Main Start Command
+// Main Start Command (handles both deep-link tokens from website AND normal start)
 bot.start(async (ctx) => {
     try {
         const telegramId = ctx.from.id.toString();
-        // console.log(`[DEBUG] /start received from: ${telegramId} (${ctx.from.username || "no-username"})`);
+        const telegramChatId = ctx.chat.id.toString();
+        const connectToken = ctx.startPayload; // Deep-link payload from website
 
+        // --- Deep-link auto-linking from website ---
+        if (connectToken) {
+            try {
+                const user = await User.findOne({
+                    telegramLinkToken: connectToken,
+                    telegramLinkTokenExpires: { $gt: new Date() }
+                });
+
+                if (!user) {
+                    return ctx.reply(
+                        "❌ Invalid or expired linking link. Please log into the website and generate a new connection link.",
+                        unlinkedKeyboard
+                    );
+                }
+
+                // Unlink any old account currently associated with this telegramId
+                const existingUser = await User.findOne({ telegramId });
+                if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+                    existingUser.telegramId = undefined;
+                    existingUser.telegramChatId = undefined;
+                    existingUser.telegramUsername = undefined;
+                    await existingUser.save();
+                }
+
+                // Bind new telegram info and clear the single-use token
+                user.telegramId = telegramId;
+                user.telegramChatId = telegramChatId;
+                user.telegramUsername = ctx.from.username || undefined;
+                user.socialUsername = `(${ctx.from.id})[@${ctx.from.username || 'N/A'}]`;
+                user.telegramLinkToken = undefined;
+                user.telegramLinkTokenExpires = undefined;
+                await user.save();
+
+                const vipStatus = user.vip ? "✅ Active" : "❌ Inactive";
+                const expiryText = user.activationExpiryDate
+                    ? new Date(user.activationExpiryDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+                    : "N/A";
+
+                let message = `🎉 *Account linked successfully!*\n\n`;
+                message += `Welcome back, *${user.username}*!\n`;
+                message += `Your Telegram is now linked to your Email Scan account.\n\n`;
+                message += `📧 *Email:* ${user.email}\n`;
+                message += `⭐ *VIP Status:* ${vipStatus}\n`;
+                message += `📅 *Plan Expiry:* ${expiryText}\n\n`;
+                message += `Use the menu below to explore features!`;
+
+                return ctx.replyWithMarkdown(message, linkedKeyboard);
+            } catch (err) {
+                console.error("Error during Telegram deep link autolink:", err);
+                return ctx.reply("❌ An error occurred during auto-linking. Please try again.", unlinkedKeyboard);
+            }
+        }
+
+        // --- Normal start (no deep-link) ---
         const user = await User.findOne({ telegramId });
 
         if (user) {
@@ -105,8 +160,8 @@ bot.start(async (ctx) => {
 
             let message = `Welcome back, ${user.username || user.email}! 👋\n\n`;
             message += `*Your Account Status:*\n`;
-            message += `- Plan: ${user.vip ? "VIP ⭐️" : "Free Player"}\n`;
-            message += `- API Access: ${user.apiaccess ? "Enabled ✅" : "Disabled ❌"}\n\n`;
+            message += `- Plan: ${user.vip ? "VIP 💎✨" : "Free Player"}\n`;
+            message += `- API Access: ${user.apiaccess ? "Enabled 🚀" : "Disabled ❌"}\n\n`;
             message += `Use the menu below to navigate:`;
 
             return ctx.replyWithMarkdown(message, linkedKeyboard);
@@ -156,11 +211,11 @@ bot.hears("👤 Profile", async (ctx) => {
         let message = `*👤 User Profile*\n\n`;
         message += `*Username:* \`${user.username || "N/A"}\` \n`;
         message += `*Email:* \`${user.email}\` \n`;
-        message += `*Plan Status:* ${user.vip ? "VIP ⭐️" : "Free Player"}\n`;
+        message += `*Plan Status:* ${user.vip ? "VIP 💎✨" : "Free Player"}\n`;
         if (user.vip && user.activationExpiryDate) {
             message += `*VIP Expiry:* ${new Date(user.activationExpiryDate).toLocaleDateString()}\n`;
         }
-        message += `*API Access:* ${user.apiaccess ? "Enabled ✅" : "Disabled ❌"}\n`;
+        message += `*API Access:* ${user.apiaccess ? "Enabled 🚀" : "Disabled ❌"}\n`;
 
         ctx.replyWithMarkdown(message, linkedKeyboard);
     } catch (err) {
@@ -169,14 +224,14 @@ bot.hears("👤 Profile", async (ctx) => {
     }
 });
 
-bot.hears("🔍 Check Accounts", async (ctx) => {
+bot.hears("📧 Check Accounts", async (ctx) => {
     try {
         const telegramId = ctx.from.id.toString();
         const user = await User.findOne({ telegramId });
         if (!user) return ctx.reply("Please link your account first via /start.");
 
         if (!user.vip) {
-            return ctx.reply("⭐ *VIP Feature*\n\nEmail checking is currently exclusive to VIP members. Please visit the website to upgrade your plan!\n\n🌐 https://emailscan.in", { parse_mode: 'Markdown' });
+            return ctx.reply(`💎 *VIP Feature*\n\nEmail checking is currently exclusive to VIP members. Please visit the website to upgrade your plan!\n\n🌐 ${WEBSITE_URL}`, { parse_mode: 'Markdown' });
         }
 
         ctx.scene.enter("UPLOAD_SCENE").catch(err => console.error("Scene enter error (Check Accounts):", err));
@@ -189,10 +244,22 @@ bot.hears("🌐 Visit Website", (ctx) => {
     ctx.reply(`Opening website: ${WEBSITE_URL}`).catch(() => {});
 });
 
-bot.hears("📤 Logout", async (ctx) => {
+bot.hears("🚪 Logout", async (ctx) => {
     try {
         const telegramId = ctx.from.id.toString();
-        await User.updateOne({ telegramId }, { $unset: { telegramId: "" } });
+        // Clear all telegram fields on logout
+        await User.updateOne(
+            { telegramId },
+            {
+                $unset: {
+                    telegramId: "",
+                    telegramChatId: "",
+                    telegramUsername: "",
+                    telegramLinkToken: "",
+                    telegramLinkTokenExpires: ""
+                }
+            }
+        );
         await ctx.reply("You have been logged out and your account has been unlinked.", Markup.removeKeyboard());
         return ctx.reply("Type /start to login or sign up again.");
     } catch (err) {
@@ -203,19 +270,19 @@ bot.hears("📤 Logout", async (ctx) => {
 
 // Launch bot
 bot.launch().then(() => {
-    console.log("🚀 Telegram Bot is running!");
+    console.log("🤖 Telegram Bot is running!");
 }).catch(err => {
     console.error("❌ Failed to launch bot:", err);
 });
 
 // --- Global Error Handling for Process ---
 process.on("uncaughtException", (err) => {
-    console.error("🔥 UNCAUGHT EXCEPTION:", err);
+    console.error("💥 UNCAUGHT EXCEPTION:", err);
     // In production, you might want to restart the process
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-    console.error("🔥 UNHANDLED REJECTION at:", promise, "reason:", reason);
+    console.error("💥 UNHANDLED REJECTION at:", promise, "reason:", reason);
 });
 
 // Enable graceful stop

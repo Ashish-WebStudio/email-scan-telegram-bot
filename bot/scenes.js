@@ -75,6 +75,8 @@ const loginWizard = new Scenes.WizardScene(
             }
 
             user.telegramId = telegramId;
+            user.telegramChatId = ctx.chat.id.toString();
+            user.telegramUsername = ctx.from.username || undefined;
             user.socialUsername = `(${ctx.from.id})[@${ctx.from.username || 'N/A'}]`;
             await user.save();
 
@@ -85,8 +87,8 @@ const loginWizard = new Scenes.WizardScene(
             message += `Use the menu below to navigate.`;
 
             const linkedKeyboard = Markup.keyboard([
-                ["👤 Profile", "🔍 Check Accounts"],
-                ["🌐 Visit Website", "📤 Logout"]
+                ["👤 Profile", "📧 Check Accounts"],
+                ["🌐 Visit Website", "🚪 Logout"]
             ], {
                 input_field_placeholder: "Choose an action or send a file...",
                 is_persistent: true
@@ -184,6 +186,8 @@ const signupWizard = new Scenes.WizardScene(
                 password: hashedPassword,
                 provider: "local",
                 telegramId,
+                telegramChatId: ctx.chat.id.toString(),
+                telegramUsername: ctx.from.username || undefined,
                 socialUsername: `(${ctx.from.id})[@${ctx.from.username || 'N/A'}]`,
                 registrationSource: "bot",
                 vip: false,
@@ -201,8 +205,8 @@ const signupWizard = new Scenes.WizardScene(
             message += `Use the menu below to navigate.`;
 
             const linkedKeyboard = Markup.keyboard([
-                ["👤 Profile", "🔍 Check Accounts"],
-                ["🌐 Visit Website", "📤 Logout"]
+                ["👤 Profile", "📧 Check Accounts"],
+                ["🌐 Visit Website", "🚪 Logout"]
             ], {
                 input_field_placeholder: "Choose an action or send a file...",
                 is_persistent: true
@@ -251,7 +255,7 @@ const uploadWizard = new Scenes.WizardScene(
             // Allow users to exit the scene by clicking other menu buttons or typing /cancel
             if (ctx.message.text) {
                 const text = ctx.message.text;
-                if (text === "/cancel" || text === "📤 Logout" || text === "👤 Profile" || text === "🌐 Visit Website") {
+                if (text === "/cancel" || text === "🚪 Logout" || text === "👤 Profile" || text === "🌐 Visit Website") {
                     await ctx.reply("Returning to main menu...");
                     return ctx.scene.leave();
                 }

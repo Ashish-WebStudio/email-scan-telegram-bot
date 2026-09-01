@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema(
         username: {
             type: String,
             required: true,
-            unique: true,
+            minlength: 3,
             trim: true,
         },
         email: {
@@ -26,6 +26,9 @@ const userSchema = new mongoose.Schema(
             enum: ["user", "admin"],
             default: "user",
         },
+        googleId: {
+            type: String,
+        },
         vip: {
             type: Boolean,
             default: false,
@@ -39,10 +42,8 @@ const userSchema = new mongoose.Schema(
             enum: ["local", "google", "telegram"],
             default: "local",
         },
-        telegramId: {
-            type: String,
-            sparse: true,
-            unique: true,
+        activationExpiryDate: {
+            type: Date,
         },
         activationCode: {
             type: String,
@@ -50,19 +51,47 @@ const userSchema = new mongoose.Schema(
         activationDate: {
             type: Date,
         },
-        activationExpiryDate: {
+        resetToken: {
+            type: String,
+        },
+        resetTokenExpiry: {
             type: Date,
         },
         socialUsername: {
             type: String,
             sparse: true,
         },
+        apiKey: {
+            type: String,
+            default: null,
+        },
+        apiKeyCreatedAt: {
+            type: Date,
+        },
+        // Telegram Integration Fields
+        telegramId: {
+            type: String,
+            unique: true,
+            sparse: true,
+        },
+        telegramChatId: {
+            type: String,
+        },
+        telegramUsername: {
+            type: String,
+        },
+        telegramLinkToken: {
+            type: String,
+            unique: true,
+            sparse: true,
+        },
+        telegramLinkTokenExpires: {
+            type: Date,
+        },
         registrationSource: {
             type: String,
             default: "bot", // can be "web" or "bot"
         },
-        // We omit fields not immediately needed by the bot for auth checks (e.g. OTP tokens) 
-        // unless they are explicitly required in queries.
     },
     { timestamps: true }
 );
